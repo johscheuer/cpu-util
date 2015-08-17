@@ -10,16 +10,23 @@ import (
 	"time"
 )
 
-func readProcStat() (idle, total uint64) {
+type CPUUsage struct {
+	idle  uint64
+	total uint64
+}
+
+func readProcStat() (cpuUsages map[string]CPUUsage) {
 	stats, err := ioutil.ReadFile("/proc/stat")
 	if err != nil {
 		fmt.Println(err)
 		os.Exit(1)
 	}
 
+	cpuUsages = make(map[string]CPUUsage)
 	for _, stat := range strings.Split(string(stats), "\n") {
 		fields := strings.Fields(stat)
-		if fields[0] == "cpu" {
+		if strings.HasPrefix(fields[0], "cpu") {
+			cpuUsage := CPUUsage{}
 			for index, field := range fields {
 				if index < 1 {
 					continue
@@ -30,27 +37,31 @@ func readProcStat() (idle, total uint64) {
 					fmt.Println(err)
 				}
 
-				total += value //count all ticks
+				cpuUsage.total += value //count all ticks
 
 				if index == 4 {
-					idle = value
+					cpuUsage.idle = value
 				}
 			}
+			cpuUsages[fields[0]] = cpuUsage
+		} else {
+			return
 		}
-		return
+
 	}
 	return
 }
 
 func calculateCPUUsage() {
-	idle_begin, total_begin := readProcStat()
+	cpuUsages_begin := readProcStat()
 	time.Sleep(time.Millisecond * 500)
-	idle_end, total_end := readProcStat()
+	cpuUsages_end := readProcStat()
 
-	totalTime := float64(total_end - total_begin)
-	cpuUsage := 100 * (totalTime - float64(idle_end-idle_begin)) / totalTime
-
-	fmt.Printf("CPU usage: %.3f%%\n", cpuUsage)
+	for cpu, cpuUsage := range cpuUsages_begin {
+		totalTime := float64(cpuUsages_end[cpu].total - cpuUsage.total)
+		cpuUsage := 100 * (totalTime - float64(cpuUsages_end[cpu].idle-cpuUsage.idle)) / totalTime
+		fmt.Printf("CPU %s usage: %.3f%%\n", cpu, cpuUsage)
+	}
 }
 
 func main() {
